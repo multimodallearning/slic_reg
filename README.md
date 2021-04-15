@@ -46,7 +46,9 @@ cluster = skimage.segmentation.slic(img_aff[i,0].cpu().numpy(),multichannel=Fals
 Here, img_aff is the reference scan transformed with a random affine matrix and sdt_aff the signed distance transform of its corresponding foreground mask (by choosing <30 this is dilated by 30 voxels or 60 mm ensuring that nearly the whole body is registered). 
 
 This step is repeated 16 times with slightly varying initialisations so that each voxel can be identified by a 16-tuple of supervoxels (please also see (Heinrich et al., 2013) for details http://www.mpheinrich.de/pub/IPMI2013_mycopy.pdf). By simultaneously assigning each voxel to multiple layers of supervoxels its spatial position in the canonical space of reference coordinates is more accurately defined as outlined in the sketch below:
-![supervoxels][slic_layers.png]
+![supervoxels](slic_layers.png)
+
+Unfortunately, the number of superpixels returned by skimage.segmentation is not always equal to n_segments. Hence, we implemented a post-processing that iteratively merges smaller segments until 127 foreground and one background supervoxels are reached (see code for details).
 
 Next, the reference supervoxels are spatially transferred to all training images using deeds’ displacement fields. 
 
