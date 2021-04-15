@@ -9,10 +9,10 @@ This repository provides open source code for our SLIC_Reg approach for 3D defor
 Our method radically changes the design of learning based registration by replacing the often unstable regression target with automatic supervoxel predictions. That means we solve registration by segmentation, yet not in a semantic way where anatomical labels are required but purely based on local geometry. Slic-Reg uses a 3D DeepLabout architecture with multiple heads and outperforms PDD-Net (state-of-the-art for unsupervised DL registration in the Learn2Reg challenge) and regression (as well as UNet architectures):
 | Method  | Initial | PDD | Regression | Slic-UNet | **Slic-Reg**  |
 | ------------- | --------- | --------- | --------- |  --------- |  --------- | 
-| Spleen (1) | 18.0% | 48.8% | 31.1% | 57.1% | **62.4** |
-| Right Kidney (2) | 12.5% | 49.0% | 45.6% | 38.4% | **50.8%** |
+| Spleen (1) | 18.0% | 48.8% | 31.1% | 57.1% | **62.4%** |
+| Right Kidney (2) | 12.5% | 49.0% | 45.6% | 38.4% | 50.8% |
 | Left Kidney (3) | 9.0% | 42.3% | 43.2% | 41.8% | **49.1%** |
-| Liver (6) | 26.2% | 71.1% | 57.7% | 71.8% | **74.1%** | 
+| Liver (6) | 26.2% | 71.1% | 57.7% | 71.8% | 74.1% | 
 | Avg. 4 (1,2,3,6) | 16.4% | 50.1% | 44.4% | 52.3% | **59.1%** |
 | Avg. 13 | 8.8% | 29.1% |25.1% | 30.0% | 31.8% |
 
