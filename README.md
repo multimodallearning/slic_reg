@@ -120,4 +120,33 @@ We trained the prediction of supervoxels for 3000 iterations with a mini-batch s
 
 
 ## 4) Deformable Adam registration of predicted supervoxels 
-Subsequently a one-to-one correspondences between reference and test image could be directly obtained. Yet, to obtain an optimal displacement field that balances the potentially diverging correspondences and avoids erroneous hard assignments, we implement another step that optimises the alignment of all supervoxels using the Adam optimiser with a diffusion regularisation penalty.
+Subsequently a one-to-one correspondences between reference and test image could be directly obtained. Yet, to obtain an optimal displacement field that balances the potentially diverging correspondences and avoids erroneous hard assignments, we implement another step that optimises the alignment of all supervoxels using the Adam optimiser with a diffusion regularisation penalty. The method is straightforward to implement and very fast (<1 sec for 3D registration):
+```
+lr = 0.05; alpha = 0.015; k = 8; num_iter = 100; N = 2048
+def adam_optim(kpts_fixed, feat_kpts_fixed, feat_moving,alpha):
+    class Flow(nn.Module):
+        def __init__(self):
+            super(Flow, self).__init__()
+            self.flow = nn.Parameter(torch.zeros(kpts_fixed.shape))
+        def forward(self):
+            return self.flow
+    net = Flow().to(device)
+    optimizer = optim.Adam(net.parameters(), lr=lr)
+    weight = knn_graph(kpts_fixed, k)[2]
+    for iter in range(num_iter):
+        optimizer.zero_grad()
+        flow = net()
+        kpts_moving = kpts_fixed + flow
+        feat_kpts_moving = F.grid_sample(feat_moving, kpts_moving.view(1, 1, 1, -1, 3), mode='bilinear').view(1, -1, N).permute(0, 2, 1)
+        data_loss = F.mse_loss(feat_kpts_moving, feat_kpts_fixed)
+        reg_loss = (pdist(flow)*weight).sum()/(kpts_fixed.shape[1])
+        loss = data_loss + alpha*reg_loss
+        loss.backward()
+        optimizer.step()
+    return flow.detach()
+```
+kpts_fixed represents the supervoxel centres (16x128 = 2048). As input the algorithm requires floating numbers, we hence convert the argmax integers (after softmax prediction) back to a one_hot representation. To save memory and computation time, we use a smaller number of permutations (16 instead of 128) so that with 16 supervoxel layers, we have 256 channels.
+
+
+https://user-images.githubusercontent.com/11568065/114840637-4cfb5000-9dd7-11eb-9a51-47a822089e2b.mov
+
