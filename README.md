@@ -2,7 +2,7 @@
 Rethinking the Design of Learning based Inter-Patient Registration using Deformable Supervoxels (MIDL 2021)
 https://openreview.net/forum?id=zZA5TpNdC4Z
 
-<img src="midl2021_slic_reg_figure.pdf" alt="Overview figure"/>
+![Overview figure](midl2021_slic_reg_figure.png)
 
 This repository provides open source code for our SLIC_Reg approach for 3D deformable image registration.
 The dataset used in this paper is a pre-processed version of the "Beyond the Cranial Vault" MICCAI challenge on abomdinal CT and contains manual segmentations of the following 13 anatomies right kidney, left kidney, gallbladder, esophagus, liver, stomach, aorta, inferior vena cava, portal vein, pancreas, right adrenal gland, left adrenal gland. It contains 30 public scans that were split into training (#2,3,5,6,8,9,21,22,24,25,27,28,30,31,33,34,36,37,39,40) and validation (#1,4,7,10,23,26,29,32,35,38) out of which #38 was selected as template. The data can be obtained here: https://cloud.imi.uni-luebeck.de/s/c9GapHY3cx9x82p (648 MBytes)
