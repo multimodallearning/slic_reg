@@ -5,6 +5,17 @@ https://openreview.net/forum?id=zZA5TpNdC4Z
 ![Overview figure](midl2021_slic_reg_figure.png)
 
 This repository provides open source code for our SLIC_Reg approach for 3D deformable image registration.
+
+Our method radically changes the design of learning based registration by replacing the often unstable regression target with automatic supervoxel predictions. That means we solve registration by segmentation, yet not in a semantic way where anatomical labels are required but purely based on local geometry. Slic-Reg uses a 3D DeepLabout architecture with multiple heads and outperforms PDD-Net (state-of-the-art for unsupervised DL registration in the Learn2Reg challenge) and regression (as well as UNet architectures):
+| Method  | Initial | PDD | Regression | Slic-UNet | **Slic-Reg**  |
+| ------------- | --------- | --------- | --------- |  --------- |  --------- | 
+| Spleen (1) | 18.0% | 48.8% | 31.1% | 57.1% | **62.4** |
+| Right Kidney (2) | 12.5% | 49.0% | 45.6% | 38.4% | **50.8%** |
+| Left Kidney (3) | 9.0% | 42.3% | 43.2% | 41.8% | **49.1%** |
+| Liver (6) | 26.2% | 71.1% | 57.7% | 71.8% | **74.1%** | 
+| Avg. 4 (1,2,3,6) | 16.4% | 50.1% | 44.4% | 52.3% | **59.1%** |
+| Avg. 13 | 8.8% | 29.1% |25.1% | 30.0% | 31.8% |
+
 The dataset used in this paper is a pre-processed version of the "Beyond the Cranial Vault" MICCAI challenge on abomdinal CT and contains manual segmentations of the following 13 anatomies right kidney, left kidney, gallbladder, esophagus, liver, stomach, aorta, inferior vena cava, portal vein, pancreas, right adrenal gland, left adrenal gland. It contains 30 public scans that were split into training (#2,3,5,6,8,9,21,22,24,25,27,28,30,31,33,34,36,37,39,40) and validation (#1,4,7,10,23,26,29,32,35,38) out of which #38 was selected as template. The data can be obtained here: https://cloud.imi.uni-luebeck.de/s/c9GapHY3cx9x82p (648 MBytes)
 Please cite: http://discovery.ucl.ac.uk/1501854/1/Modat_TBME-01460-2015.R2-preprint.pdf if you use this data and register at https://www.synapse.org/#!Synapse:syn3193805/wiki/89480 for the original access.
 ## 0) Pre-Processing
@@ -105,7 +116,8 @@ We trained the prediction of supervoxels for 3000 iterations with a mini-batch s
 affine = F.affine_grid(torch.eye(3,4).unsqueeze(0)+torch.randn(4,3,4)*.07,(4,1,96,80,128)).cuda()
 ```
  
-We trained the prediction of supervoxels for 3000 iterations with a mini-batch size of 4 (600 epochs) using Adam with lr=0.004 in less than 1 hour. We used an RTX2070 card with TensorCores enabled (through compiling pytorch 1.9 from source with CuDNN 8.1) and automatic mixed precision. Affine augmentations are used to transform training images and supervoxel segmentations on the fly: 
+We trained the prediction of supervoxels for 3000 iterations with a mini-batch size of 4 (600 epochs) using Adam with lr=0.004 in less than 1 hour. We used an RTX2070 card with TensorCores enabled (through compiling pytorch 1.9 from source with CuDNN 8.1) and automatic mixed precision. 
+
 
 ## 4) Deformable Adam registration of predicted supervoxels 
 Subsequently a one-to-one correspondences between reference and test image could be directly obtained. Yet, to obtain an optimal displacement field that balances the potentially diverging correspondences and avoids erroneous hard assignments, we implement another step that optimises the alignment of all supervoxels using the Adam optimiser with a diffusion regularisation penalty.
