@@ -147,6 +147,6 @@ def adam_optim(kpts_fixed, feat_kpts_fixed, feat_moving,alpha):
 ```
 kpts_fixed represents the supervoxel centres (16x128 = 2048). As input the algorithm requires floating numbers, we hence convert the argmax integers (after softmax prediction) back to a one_hot representation. To save memory and computation time, we use a smaller number of permutations (16 instead of 128) so that with 16 supervoxel layers, we have 256 channels.
 
-
+You can watch a fly-through of a typical registration result, showing a warped manual segmentation using the displacements of Slic_Reg onto the target scan: 
 https://user-images.githubusercontent.com/11568065/114840637-4cfb5000-9dd7-11eb-9a51-47a822089e2b.mov
 
