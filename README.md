@@ -45,12 +45,67 @@ cluster = skimage.segmentation.slic(img_aff[i,0].cpu().numpy(),multichannel=Fals
 ```
 Here, img_aff is the reference scan transformed with a random affine matrix and sdt_aff the signed distance transform of its corresponding foreground mask (by choosing <30 this is dilated by 30 voxels or 60 mm ensuring that nearly the whole body is registered). 
 
-This step is repeated 16 times with slightly varying initialisations so that each voxel can be identified by a 16-tuple of supervoxels (please also see (Heinrich et al., 2013) for details http://www.mpheinrich.de/pub/IPMI2013_mycopy.pdf). By simultaneously assigning each voxel to multiple layers of supervoxels its spatial position in the canonical space of reference coordinates is more accurately defined as outlined in the sketch below:
-![supervoxels](slic_layers.png)
+This step is repeated 16 times with slightly varying initialisations so that each voxel can be identified by a 16-tuple of supervoxels (please also see (Heinrich et al., 2013) for details http://www.mpheinrich.de/pub/IPMI2013_mycopy.pdf). By simultaneously assigning each voxel to multiple layers of supervoxels its spatial position in the canonical space of reference coordinates is more accurately defined as outlined in the following sketch:
+<img src="slic_layers.png" alt="supervoxels" width="50%" height="50%">
 
 Unfortunately, the number of superpixels returned by skimage.segmentation is not always equal to n_segments. Hence, we implemented a post-processing that iteratively merges smaller segments until 127 foreground and one background supervoxels are reached (see code for details).
-
-Next, the reference supervoxels are spatially transferred to all training images using deeds’ displacement fields. 
+Next, the reference supervoxels are spatially transferred to all training images using deeds’ displacement fields. Since, all these sub-steps are a bit cumbersome we are also providing all warped pre-processed supervoxels as download: https://cloud.imi.uni-luebeck.de/s/GaMekWkAnrErDgj (Note that each voxel in each training/reference image is now assigned to 16 classes (0..127)). 
 
 ## 3) 3D DeepLab prediction of SLIC segmentation 
-Third, a deep CNN is trained to densely predict the over-segmentations for unseen images (see Fig. 1 for a qualitative result). We designed a compact 3D DeepLab (MobileNetV2 with ASPP) (Sandler et al., 2018) for best performance on a small dataset. That means for each voxel a total of 16 softmax scores (with 128 class probabilities) is estimated and one-to-one correspondences between reference and test image could be directly obtained. Yet, to obtain an optimal displacement field that balances the potentially diverging correspondences and avoids erroneous hard assignments, we implement another step that optimises the alignment of all supervoxels using the Adam optimiser with a di↵usion regularisation penalty (details are found in source code).
+Next, a deep CNN is trained to densely predict the over-segmentations for unseen images (see Fig. 1 for a qualitative result). We designed a compact 3D DeepLab (MobileNetV2 with ASPP) (Sandler et al., 2018) for best performance on a small dataset. The ASPP module is simply changed to 3D from https://github.com/pytorch/vision/blob/master/torchvision/models/segmentation/deeplabv3.py but the MobileNetV2 backbone is specifically adapted to our needs as follows:
+```
+class ResBlock(torch.nn.Module):
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+    def forward(self, inputs):
+        return self.module(inputs) + inputs
+in_channels = torch.Tensor([1,24,24,32,48,48,48,64]).long()
+mid_channels = torch.Tensor([64,128,192,192,256,256,256,384]).long()
+out_channels = torch.Tensor([24,24,32,48,48,48,64,64]).long()
+mid_stride = torch.Tensor([1,1,1,2,1,1,1,1])
+net = []
+net.append(nn.Identity())
+for i in range(8):
+    inc = int(in_channels[i]); midc = int(mid_channels[i]); outc = int(out_channels[i]); strd = int(mid_stride[i])
+    layer = nn.Sequential(nn.Conv3d(inc,midc,1,bias=False),nn.BatchNorm3d(midc),nn.ReLU6(True),\
+                    nn.Conv3d(midc,midc,3,stride=strd,padding=1,bias=False,groups=midc),nn.BatchNorm3d(midc),nn.ReLU6(True),\
+                                   nn.Conv3d(midc,outc,1,bias=False),nn.BatchNorm3d(outc))
+    if(i==0):
+        layer[0] = nn.Conv3d(inc,midc,3,padding=1,stride=2,bias=False)
+    if((inc==outc)&(strd==1)):
+        net.append(ResBlock(layer))
+    else:
+        net.append(layer)
+
+backbone = nn.Sequential(*net)
+```
+This results in only about 220k trainable parameters and we use residual were possible (same stride and in/out channels). We use kaiming_normal weight initialisation and later add a single skip connection to improve segmentation detail.
+After applying the atrous spatial pyramid pooling, which is essential to capture context, we use a head with groups=16 and channels x 16, so that for each voxel a total of 16 softmax scores (with 128 class probabilities) are estimated:
+```
+ aspp = ASPP(64,(2,4,8,16),128)#ASPP(64,(1,),128)
+ num_classes = 128 #input 128 + 24 (from skip)
+ head = nn.Sequential(nn.Conv3d((128+24), 32*16, 1, padding=0,groups=1, bias=False),nn.BatchNorm3d(32*16),nn.ReLU(),\
+                      nn.Conv3d(32*16, 32*16, 3, groups=16,padding=1, bias=False),nn.BatchNorm3d(32*16),nn.ReLU(),\
+                      nn.Conv3d(32*16, num_classes*16, 1,groups=16))
+```
+A complete forward path (using memory checkpointing) is defined as follows:
+```
+x1 = checkpoint(backbone[:3],input)
+x2 = checkpoint(backbone[3:],x1)
+y = checkpoint(aspp,x2)
+#skip-connection at backbone[3]
+for j in range(4): #unroll mini-batch for head
+    y1 = torch.cat((x1[j:j+1],F.interpolate(y[j:j+1],scale_factor=2)),1)
+    output_j = checkpoint(head,y1)
+```
+
+We trained the prediction of supervoxels for 3000 iterations with a mini-batch size of 4 (600 epochs) using Adam with lr=0.004 in less than 1 hour. We used an RTX2070 card with TensorCores enabled (through compiling pytorch 1.9 from source with CuDNN 8.1) and automatic mixed precision. Affine augmentations are used to transform training images and supervoxel segmentations on the fly:
+```
+affine = F.affine_grid(torch.eye(3,4).unsqueeze(0)+torch.randn(4,3,4)*.07,(4,1,96,80,128)).cuda()
+```
+ 
+We trained the prediction of supervoxels for 3000 iterations with a mini-batch size of 4 (600 epochs) using Adam with lr=0.004 in less than 1 hour. We used an RTX2070 card with TensorCores enabled (through compiling pytorch 1.9 from source with CuDNN 8.1) and automatic mixed precision. Affine augmentations are used to transform training images and supervoxel segmentations on the fly: 
+
+## 4) Deformable Adam registration of predicted supervoxels 
+Subsequently a one-to-one correspondences between reference and test image could be directly obtained. Yet, to obtain an optimal displacement field that balances the potentially diverging correspondences and avoids erroneous hard assignments, we implement another step that optimises the alignment of all supervoxels using the Adam optimiser with a diffusion regularisation penalty.
