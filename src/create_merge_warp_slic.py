@@ -121,4 +121,45 @@ torch.save(labels_new.byte().cpu(),'abdomenIsoCrop38_supervoxel16.pth')
 !ls -l abdomenIsoCrop38_supervoxel16.pth
 
 #don't forget to warp them with the baseline registration model
-    #print(i)
+H = 192; W = 160; D = 256
+def affine_grid_bcv(affine,H,W,D):
+    #need to transpose matrix after loadtxt
+    affine1 = affine.t().contiguous().view(-1)
+
+    grid_x = torch.arange(H).float().view(-1,1,1)*affine1[0]+torch.arange(W).float().view(1,-1,1)*affine1[1]+torch.arange(D).float().view(1,1,-1)*affine1[2]+affine1[3]
+    grid_y = torch.arange(H).float().view(-1,1,1)*affine1[4]+torch.arange(W).float().view(1,-1,1)*affine1[5]+torch.arange(D).float().view(1,1,-1)*affine1[6]+affine1[7]
+    grid_z = torch.arange(H).float().view(-1,1,1)*affine1[8]+torch.arange(W).float().view(1,-1,1)*affine1[9]+torch.arange(D).float().view(1,1,-1)*affine1[10]+affine1[11]
+
+    transform_grid = torch.stack((grid_z,grid_y,grid_x),3).unsqueeze(0)
+    transform_grid = (transform_grid/torch.Tensor([D-1,W-1,H-1]).view(1,1,1,1,-1))*2-1
+
+    return transform_grid
+
+import struct
+
+cases = torch.cat((torch.arange(1,11),torch.arange(21,41)),0)
+print(cases)
+slic_warped = torch.zeros(30,16,96,80,128).byte()
+
+for i in range(30):
+    affine = torch.from_numpy(np.loadtxt('AbdomenIsoCrop/baseline/F'+str(int(cases[i])).zfill(2)+'_38_matrix.txt')).float()
+    if(i==27):
+        print(affine)
+    with open('AbdomenIsoCrop/baseline/F'+str(int(cases[i])).zfill(2)+'_38_displacements.dat', 'rb') as content_file:
+        content = content_file.read()
+    with torch.no_grad():
+        disp_field = torch.from_numpy(np.array(struct.unpack('f'*(len(content)//4),content))).reshape(1,3,D//grid_space,W//grid_space,H//grid_space).cuda().permute(0,1,4,3,2).float()
+        disp_field = F.interpolate(disp_field,size=(H,W,D),mode='trilinear',align_corners=None).permute(0,2,3,4,1)[:,:,:,:,torch.Tensor([2,0,1]).long()].flip(4)
+        disp_torch = disp_field.flip(4)/torch.Tensor([256-1,160-1,192-1]).cuda().view(1,1,1,1,3)*2
+    
+    torch_grid = F.interpolate(disp_torch.cpu().permute(0,4,1,2,3)+affine_grid_bcv(affine,H,W,D).permute(0,4,1,2,3),scale_factor=0.5,mode='trilinear').permute(0,2,3,4,1)
+    for j in range(16):
+        slic_warped[i,j] = F.grid_sample(slic[j].view(1,1,H//2,W//2,D//2).float(),torch_grid,mode='nearest').squeeze().byte()
+    print(i)
+
+
+
+
+
+torch.save(slic_warped,'abdomenIsoCrop38_supervoxel16_warped.pth')
+
