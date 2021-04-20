@@ -1,3 +1,14 @@
+import torch
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import nibabel as nib
+import cc3d
+import struct
+import numpy as np
+from scipy.ndimage import distance_transform_edt as edt
+import torch.nn as nn
+import torch.optim as optim
+device = 'cuda'
 ##### kpts / graph #####
 
 def kpts_pt(kpts_world, shape, align_corners=None):
