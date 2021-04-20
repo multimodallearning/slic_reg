@@ -301,19 +301,50 @@ to32 = torch.zeros(16,128).long()
 slic32 = torch.zeros_like(slic[:16])
 slic_warp32 = torch.zeros_like(slic_warp[:16])
 
-print('case',ix)
-  #convert argmax prediction to one_hot (with "compressed channels")
 
-  with torch.no_grad():
-      for i in range(16):
-          for j in range(8):
-              #print(to32[i,j*32:(j+1)*32].shape,torch.randperm(32).shape)
-              to32[i,j*16:(j+1)*16] = torch.randperm(16)
-          slic32[i] = to32[i][slic[i]]
-          slic_warp32[i] = to32[i][slic_pred[ix][i]]
+#run the registration for all 9 test cases
+dice0 = torch.zeros(9,13)
+
+dice_reg = torch.zeros(1,9,13)
+alphas_ = torch.Tensor([0.15])
+large = torch.Tensor([0,1,2,5]).long()
+    
+for ix in range(9):
+    print('case',ix)
+    with torch.no_grad():
+          #convert argmax prediction to one_hot (with "compressed channels")
+
+        for i in range(16):
+            for j in range(8):
+                #print(to32[i,j*32:(j+1)*32].shape,torch.randperm(32).shape)
+                to32[i,j*16:(j+1)*16] = torch.randperm(16)
+            slic32[i] = to32[i][slic[i]]
+            slic_warp32[i] = to32[i][slic_pred[ix][i]]
+
+        with torch.cuda.amp.autocast():
+
+            slic32_ = F.avg_pool3d(F.avg_pool3d(F.one_hot(slic32[0:16].cuda(),16).permute(0,4,1,2,3).float(),3,stride=2,padding=1),5,stride=1,padding=2)#.cuda()
+
+            feat_kpts_fixed = F.grid_sample(slic32_.float().reshape(1,-1,96//2,80//2,128//2), kpts_fixed.cuda().view(1, 1, 1, -1, 3), mode='bilinear').view(1, -1, N).permute(0, 2, 1)
+            del slic32_
+            slic_warp32_ = F.avg_pool3d(F.avg_pool3d(F.one_hot(slic_warp32[0:16].cuda(),16).permute(0,4,1,2,3).float(),3,stride=2,padding=1),5,stride=1,padding=2)#.cuda()
 
 
+    seg40 = seg_val[ix]
+    dice0[ix] = dice_coeff(seg40.cuda().contiguous(),seg38.cuda().contiguous(),14).cpu()
+    for k in range(1):
+        flow = adam_optim(kpts_fixed.cuda(), feat_kpts_fixed.cuda(), slic_warp32_.cuda().view(1,-1,96//2,80//2,128//2),alphas_[k])
 
+        dense_flow = thin_plate_dense(kpts_fixed.cuda(), flow.cuda(), (192, 160, 256), 5, 0.001)
+
+
+        seg_moving_warped = F.grid_sample(seg40.view(1,1,192,160,256).float().cuda(), F.affine_grid(torch.eye(3,4,device='cuda').unsqueeze(0), (1,1,H,W,D))\
+                                      + dense_flow.cuda(), mode='nearest')#.to(device)
+
+
+        dice_reg[k,ix] = dice_coeff(seg_moving_warped.contiguous(),seg38.cuda().contiguous(),14).cpu()
+print('before',dice0.mean(),dice0[:,large].mean(),dice0[:,large].mean(1))#,'\n',d0)
+print('slicreg',dice_reg.mean(2).mean(1),dice_reg[:,:,large].mean(2).mean(1),'\n',dice_reg[:,:,large].mean(2))#,'\n',d2)
 
 
 
