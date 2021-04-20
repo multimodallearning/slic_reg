@@ -95,7 +95,7 @@ img_val = img_val/500
 lr = 0.05
 alpha = 0.015#2
 
-k = 8
+k = 5
 num_iter = 100
 N = 2048
 def adam_optim(kpts_fixed, feat_kpts_fixed, feat_moving,alpha):
@@ -170,17 +170,13 @@ for ix in range(9):
 
     seg40 = seg_val[ix]
     dice0[ix] = dice_coeff(seg40.cuda().contiguous(),seg38.cuda().contiguous(),14).cpu()
-    for k in range(1):
-        flow = adam_optim(kpts_fixed.cuda(), feat_kpts_fixed.cuda(), slic_warp32_.cuda().view(1,-1,96//2,80//2,128//2),alphas_[k])
-
-        dense_flow = thin_plate_dense(kpts_fixed.cuda(), flow.cuda(), (192, 160, 256), 5, 0.001)
-
-
-        seg_moving_warped = F.grid_sample(seg40.view(1,1,192,160,256).float().cuda(), F.affine_grid(torch.eye(3,4,device='cuda').unsqueeze(0), (1,1,H,W,D))\
+    flow = adam_optim(kpts_fixed.cuda(), feat_kpts_fixed.cuda(), slic_warp32_.cuda().view(1,-1,96//2,80//2,128//2),alphas_[0])
+    dense_flow = thin_plate_dense(kpts_fixed.cuda(), flow.cuda(), (192, 160, 256), 5, 0.001)
+    seg_moving_warped = F.grid_sample(seg40.view(1,1,192,160,256).float().cuda(), F.affine_grid(torch.eye(3,4,device='cuda').unsqueeze(0), (1,1,H,W,D))\
                                       + dense_flow.cuda(), mode='nearest')#.to(device)
 
 
-        dice_reg[k,ix] = dice_coeff(seg_moving_warped.contiguous(),seg38.cuda().contiguous(),14).cpu()
+    dice_reg[0,ix] = dice_coeff(seg_moving_warped.contiguous(),seg38.cuda().contiguous(),14).cpu()
 print('before',dice0.mean(),dice0[:,large].mean(),dice0[:,large].mean(1))#,'\n',d0)
 print('slicreg',dice_reg.mean(2).mean(1),dice_reg[:,:,large].mean(2).mean(1),'\n',dice_reg[:,:,large].mean(2))#,'\n',d2)
 
